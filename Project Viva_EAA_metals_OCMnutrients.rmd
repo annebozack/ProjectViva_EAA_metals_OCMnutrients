@@ -1,0 +1,284 @@
+---
+title: "Epigenetic age acceleration, OCM micronutients, and metals"
+subtitle: "Associations of prenatal one-carbon metabolism nutrients and metals with epigenetic aging biomarkers at birth and in childhood in a US cohort: Example code"
+author: 
+  - name: "Anne Bozack"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+## Libraries
+
+```{r, warning=FALSE, message=FALSE, eval=FALSE}
+library(DescTools)
+library(Metrics)
+library(MASS)
+library(sandwich)
+library(lmtest)
+library(rms)
+library(psych)
+library(GPArotation)
+library(knitr)
+library(kableExtra)
+```
+
+## Load cord blood data
+#### datCord: Dataset including the following variables
+Exposure variables:
+
+- fol_scale: mean centered and scaled first-trimester plasma folate concentration
+- B12_scale: mean centered and scaled first-trimester plasma B12 concentration
+- Cu_scale: mean centered and scaled first-trimester RBC Cu concentration
+- Mg_scale: mean centered and scaled first-trimester RBC Mg concentration
+- Mn_scale: mean centered and scaled first-trimester RBC Mn concentration
+- Se_scale: mean centered and scaled first-trimester RBC Se concentration
+- Zn_scale: mean centered and scaled first-trimester RBC Zn concentration
+- As_scale: mean centered and scaled first-trimester RBC As concentration
+- Ba_scale: mean centered and scaled first-trimester RBC Ba concentration
+- Cd_scale: mean centered and scaled first-trimester RBC Cd concentration
+- Cr_scale: mean centered and scaled first-trimester RBC Cr concentration
+- Cs_scale: mean centered and scaled first-trimester RBC Cs concentration
+- Hg_scale: mean centered and scaled first-trimester RBC Hg concentration
+- Pb_scale: mean centered and scaled first-trimester RBC Pb concentration
+- fol_scale_win: scaled and Winsorized first-trimester plasma folate concentration
+- B12_scale_win: scaled and Winsorized first-trimester plasma B12 concentration
+- Cu_scale_win: scaled and Winsorized first-trimester RBC Cu concentration
+- Mg_scale_win: scaled and Winsorized first-trimester RBC Mg concentration
+- Mn_scale_win: scaled and Winsorized first-trimester RBC Mn concentration
+- Se_scale_win: scaled and Winsorized first-trimester RBC Se concentration
+- Zn_scale_win: scaled and Winsorized first-trimester RBC Zn concentration
+- As_scale_win: scaled and Winsorized first-trimester RBC As concentration
+- Ba_scale_win: scaled and Winsorized first-trimester RBC Ba concentration
+- Cd_scale_win: scaled and Winsorized first-trimester RBC Cd concentration
+- Cr_scale_win: scaled and Winsorized first-trimester RBC Cr concentration
+- Cs_scale_win: scaled and Winsorized first-trimester RBC Cs concentration
+- Hg_scale_win: scaled and Winsorized first-trimester RBC Hg concentration
+- Pb_scale_win: scaled and Winsorized first-trimester RBC Pb concentration
+
+Covariates
+
+- sex: child sex (0 = male; 1 = female)
+- race_child2: child race and ethnicity (1 = White; 2 = Black; 3 = Hispanic; 4 = Asian; 5 = More than one race or other)
+- mom_age: maternal age at enrollment
+- mom_bmi: maternal prepregnancy BMI
+- coll_grad: maternal education (0 = not collage graduate; 1 = college graduate)
+- nullip: nulliparous
+- gt70k: household income (0 = income <= 70k USD; 1 = income > 70k USD)
+- smk_preg: maternal smoking (0 = never smoker; 1 = former smoker; 2 = smoking during pregnancy)
+
+Cell type estimates
+
+- Bcell: B cell proportion estimated in cord blood
+- CD4T: CD4 T cell proportion estimated in cord blood
+- Gran: granulocyte proportion estimated in cord blood
+- Mono: monocyte proportion estimated in cord blood
+- NK: natural killer cell proportion estimated in cord blood
+- nRBC: nucleated RBC proportion estimated in cord blood
+
+EAA variables
+
+- GA_BohlinPred_EAA_wks: Bohlin epigenetic gestational age acceleration (weeks)
+- AgeAccelerationResidual_cord_wks: Horvath epigenetic age acceleration (weeks)
+- DNAmAgeSkinBloodClockAdjAge_cord_wks: skin & blood epigenetic age acceleration (weeks)
+
+## Robust linear models for single metals and EAA
+```{r, warning=FALSE, message=FALSE, eval=FALSE}
+# Function to run rlm models and store results
+# dat: input data
+# ageVar: EAA variable
+# metals: vector of exposure variables
+# covars: vector of covariates
+# cellvars: vector of cell type estimates
+rlmTab = function(dat, ageVar, metals, covars, cellvars){
+	dfResults = data.frame(metals = metals, B_adjCell = NA, CI_lower_adjCell = NA, CI_upper_adjCell = NA, summary_adjCell = NA, p_adjCell = NA, N_adjCell = NA)
+	for (i in 1:length(metals)){
+		mod_adjCell = rlm(as.formula(paste(ageVar, ' ~ ', metals[i], ' + ', paste(covars,collapse=' + '), ' + ', paste(cellvars,collapse=' + '), sep = '')), data = dat, maxit = 30)
+        	test = coeftest(mod_adjCell, vcovHC(mod_adjCell, type="HC0"))
+			ci = coefci(x = mod_adjCell, level = 0.95, vcov. = vcovHC(mod_adjCell, type="HC0"))
+            # fill in table with results
+        	dfResults[i,2] = test[2,1] # B
+			dfResults[i,3] = ci[2,1] # CI lower bound
+			dfResults[i,4] = ci[2,2] # CI upper bound
+    		dfResults[i,5] = paste0(round(test[2,1], 2), ' (', round(ci[2,1], 2), ', ', paste0(round(ci[2,2], 2), ')')) # summary of B and CI
+        	dfResults[i,6] = round(test[2,4], 4) # p-value
+			dfResults[i,7] =dim(mod_adjCell$model)[1] # N of data analyzed
+	}
+	return(dfResults)
+}
+```
+
+### Robust linear models in cord blood 
+```{r, warning=FALSE, message=FALSE, eval=FALSE}
+metals = c('fol_scale', 'B12_scale', 'Cu_scale', 'Mg_scale', 'Mn_scale', 'Se_scale', 'Zn_scale', 'As_scale', 'Ba_scale', 'Cd_scale', 'Cr_scale', 'Cs_scale', 'Hg_scale', 'Pb_scale')
+covars = c('sex', 'race', 'mom_age', 'mom_bmi', 'coll_grad', 'nullip', 'gt70k', 'smk_preg')
+cellvars = c('Bcell', 'CD4T', 'CD8T', 'Gran', 'Mono', 'NK', 'nRBC')     
+
+# Bohlin GAA
+ageVar = 'GA_BohlinPred_EAA_wks'
+rlm_Bohlin = rlmTab(datCord, ageVar, metals, covars, cellvars)
+
+# Horvath EAA
+ageVar = 'AgeAccelerationResidual_cord_wks'
+rlm_Horvath_cord = rlmTab(datCord, ageVar, metals, covars, cellvars)
+
+# Skin & blood EAA
+ageVar = 'DNAmAgeSkinBloodClockAdjAge_cord_wks'
+rlm_skinblood_cord = rlmTab(datCord, ageVar, metals, covars, cellvars)
+```
+
+### Linear associations with Bohlin EGAA
+```{r, echo = F}
+rlm_Bohlin %>% kable() %>% kable_styling(font_size = 12) 
+```
+
+### Linear associations with Horvath EAA
+```{r, echo = F}
+rlm_Horvath_cord %>% kable() %>% kable_styling(font_size = 12) 
+```
+
+### Linear associations with skin & blood EAA
+```{r, echo = F}
+rlm_skinblood_cord %>% kable() %>% kable_styling(font_size = 12) 
+```
+
+## Non-linear associations using restricted cubic splines 
+```{r, warning=FALSE, message=FALSE, eval=FALSE}
+# Function to run RCS models and store results
+# dat: input data
+# ageVar: EAA variable
+# metals: vector of exposure variables
+# covars: vector of covariates and cell type estimates
+rcsTab = function(dat, ageVar, metals, covars){
+	dfResults = data.frame(metals = metals, B_1 = NA, B2 = NA, p_overall = NA, p_nonlinear = NA)
+	for (i in 1:length(metals)){
+        knots = as.character(quantile(dat[[metals[i]]], c(0.1, 0.5, 0.9)))
+		fit_rcs = ols(as.formula(paste(ageVar, ' ~  rcs(', metals[i], ', c(', paste(knots,collapse = ', '), '))', ' + ', paste(covars,collapse=' + '), sep = '')), data = dat)
+            dfResults[i,2] = fit_rcs$coefficients[2] # B1
+            dfResults[i,3] = fit_rcs$coefficients[3] # B2
+            dfResults[i,4] = anova(fit_rcs)[1,5] # p-value overall
+            dfResults[i,5] = anova(fit_rcs)[2,5] # nonlinear p-value
+	}
+	return(dfResults)
+}
+```
+
+### RCS in cord blood 
+```{r, warning=FALSE, message=FALSE, eval=FALSE}
+metals = c('fol_scale_win', 'B12_scale_win', 'Cu_scale_win', 'Mg_scale_win', 'Mn_scale_win', 'Se_scale_win', 'Zn_scale_win', 'As_scale_win', 'Ba_scale_win', 'Cd_scale_win', 'Cr_scale_win', 'Cs_scale_win', 'Hg_scale_win', 'Pb_scale_win')                                                                                                                                                                       
+covars = c('sex', 'race', 'mom_age', 'mom_bmi', 'coll_grad', 'nullip', 'gt70k', 'smk_preg', 'Bcell', 'CD4T', 'CD8T', 'Gran', 'Mono', 'NK', 'nRBC')                                                                                                                                                                  
+
+# Bohlin with Winsorization
+ageVar = 'GA_BohlinPred_EAA_wks'                                                                                                                                                               
+rcs_Bohlin = rcsTab(datCord, ageVar, metals, covars)
+
+## Horvath with Winsorization
+ageVar = 'AgeAccelerationResidual_cord_wks'                                                                                                                                                               
+rcs_Horvath = rcsTab(datCord, ageVar, metals, covars)
+
+## Skin & blood with Winsorization
+ageVar = 'DNAmAgeSkinBloodClockAdjAge_cord_wks'                                                                                                                                                               
+rcs_skinblood = rcsTab(datCord, ageVar, metals, covars)
+```
+
+### Nonlinear associations with Bohlin EGAA
+```{r, echo = F}
+rcs_Bohlin %>% kable() %>% kable_styling(font_size = 12) 
+```
+
+### Nonlinear associations with Horvath EAA
+```{r, echo = F}
+rcs_Horvath %>% kable() %>% kable_styling(font_size = 12) 
+```
+
+### Nonlinear associations with skin & blood EAA
+```{r, echo = F}
+rcs_skinblood %>% kable() %>% kable_styling(font_size = 12) 
+```
+
+## Explorabory factor analysis
+```{r, warning=FALSE, message=FALSE, eval=FALSE}
+# predictors
+Z = datCord[,c('fol_scale', 'B12_scale', 'Cu_scale', 'Mg_scale', 'Mn_scale', 'Se_scale', 'Zn_scale', 'As_scale', 'Ba_scale', 'Cd_scale', 'Cr_scale', 'Cs_scale', 'Hg_scale', 'Pb_scale')]  
+Z = as.matrix(Z)
+
+# KMO test
+KMO(Z)
+# remove variables with MSA < 0.60 (B12, Ba, Cd, Cr)
+Z <- Z[, KMO(Z)$MSAi>0.6]
+KMO(Z)                                                                                                                                                                                                                                                                                                                       
+
+# Bartlett test (compare correlation matrix to identify matrix)
+cortest.bartlett(Z)
+# p = 2.43331e-84
+
+# parallel analysis scree plot
+fa.parallel(Z, fa="fa")
+# Parallel analysis suggests that the number of factors =  2  and the number of components =  NA 
+
+# using 2 factors
+fit2 <- fa(Z, nfactors = 2, rotate="oblimin", fm = 'ml')
+summary(fit2)
+# BIC =  -99.77
+
+# add scores to datset
+scores = factor.scores(Z, fit2)$scores
+datCord = cbind(datCord, scores)
+```
+
+### Association between scores and EAA
+```{r, warning=FALSE, message=FALSE, eval=FALSE}
+# Function to run rlm models and store results
+# dat: input data
+# ageVar: EAA variable
+# factors: EFA scores
+# covars: vector of covariates 
+# cellvars: cell type estimates
+rlmTab_efa = function(dat, ageVar, factors, covars, cellvars){
+	dfResults = data.frame(factor = factors, B_adjCell = NA, CI_lower_adjCell = NA, CI_upper_adjCell = NA, summary_adjCell = NA, p_adjCell = NA, N_adjCell = NA)
+    mod_adjCell = rlm(as.formula(paste(ageVar, ' ~ ', paste(factors,collapse=' + '), '+', paste(covars,collapse=' + '), ' + ', paste(cellvars,collapse=' + '), sep = '')), data = dat)
+    test_adjCell = coeftest(mod_adjCell, vcovHC(mod_adjCell, type="HC0"))
+	ci_adjCell = coefci(x = mod_adjCell, level = 0.95, vcov. = vcovHC(mod_adjCell, type="HC0"))
+	for (i in 1:length(factors)){
+        dfResults[i,2] = test_adjCell[i+1,1] # B
+    	dfResults[i,3] = ci_adjCell[i+1,1] # lower CI
+		dfResults[i,4] = ci_adjCell[i+1,2] # upper CI
+		dfResults[i,5] = paste0(round(test_adjCell[i+1,1], 3), ' (', round(ci_adjCell[i+1,1], 3), ', ', paste0(round(ci_adjCell[i+1,2], 3), ')')) # summary of B and CI
+        dfResults[i,6] = round(test_adjCell[i+1,4], 4) # p-value
+		dfResults[i,7] = dim(mod_adjCell$model)[1] # N of data analyzed
+    }
+	return(dfResults)
+}
+
+factors = c('ML1', 'ML2')
+covars = c('female_d', 'race_child2', 'age_mom_enroll_d', 'bmi_mom_prepreg_d', 'coll_grad', 'nullip', 'gt70k', 'smk_preg2')
+cellvars = c('Bcell_GS_cb', 'CD4T_GS_cb', 'CD8T_GS_cb', 'Gran_GS_cb', 'Mono_GS_cb', 'NK_GS_cb', 'nRBC_GS_cb')     
+
+# Bohlin EGAA
+ageVar = 'GA_BohlinPred_EAA_wks'
+rlm_Bohlin_efa = rlmTab_efa(datCord, ageVar, factors, covars, cellvars)
+
+# Horvath EAA
+ageVar = 'AgeAccelerationResidual_cord_wks'
+rlm_Horvath_efa = rlmTab_efa(datCord, ageVar, factors, covars, cellvars)
+
+# Skin & blood EAA
+ageVar = 'DNAmAgeSkinBloodClockAdjAge_cord_wks'
+rlm_skinblood_efa = rlmTab_efa(datCord, ageVar, factors, covars, cellvars)
+```
+
+### EFA associations with Bohlin EGAA
+```{r, echo = F}
+rlm_Bohlin_efa %>% kable() %>% kable_styling(font_size = 12) 
+```
+
+### EFA associations with Horvath EAA
+```{r, echo = F}
+rlm_Horvath_efa %>% kable() %>% kable_styling(font_size = 12) 
+```
+
+### EFA associations with skin & blood EAA
+```{r, echo = F}
+rlm_skinblood_efa %>% kable() %>% kable_styling(font_size = 12) 
+```
